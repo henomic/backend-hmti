@@ -11,7 +11,7 @@ return new class extends Migration {
             $table->id();
             $table->foreignId('division_id')->constrained('divisions')->cascadeOnDelete();
             $table->string('name');
-            $table->string('date');
+            $table->enum('allowed', ['publik', 'anggota', 'divisi']);
             $table->string('pic');
             $table->string('status');
             $table->integer('progress')->default(0);

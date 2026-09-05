@@ -7,6 +7,7 @@ use App\Models\Event;
 use App\Models\EventRundown;
 use App\Models\EventDocument;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 class EventController extends Controller
@@ -15,41 +16,62 @@ class EventController extends Controller
 
     public function index(Request $request)
     {
-        $query = Event::with(['rundowns', 'documents']);
 
-        // Filter by division
-        if ($request->filled('division') && $request->division !== 'all') {
-            $query->where('division', $request->division);
+
+        try {
+            $query = Event::with(['rundowns', 'documents', 'timetables']);
+
+            // Filter by division
+            if ($request->filled('division') && $request->division !== 'all') {
+                $query->where('division', $request->division);
+            }
+
+            // Filter by status
+            if ($request->filled('status') && $request->status !== 'all') {
+                $query->where('status', $request->status);
+            }
+
+            // Filter by month
+            if ($request->filled('month') && $request->month !== 'all') {
+                // $query->whereMonth('start_time', $request->month);
+            }
+
+            // Filter by year
+            if ($request->filled('year') && $request->year !== 'all') {
+                // $query->whereYear('start_time', $request->year);
+            }
+
+            // Search by title, division, pic
+            if ($request->filled('search')) {
+                $search = $request->search;
+                $query->where(function ($q) use ($search) {
+                    $q->where('title', 'LIKE', "%{$search}%")
+                        ->orWhere('division', 'LIKE', "%{$search}%")
+                        ->orWhere('pic', 'LIKE', "%{$search}%");
+                });
+            }
+
+            $events = $query->get();
+            // ->orderBy('start_time', 'asc')
+            Log::info($events->map(fn($e) => $this->formatEvent($e)));
+
+            return response()->json($events->map(fn($e) => $this->formatEvent($e)));
+        } catch (\Throwable $e) {
+
+            Log::error('=== Event controller error ===', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+                'division_id' => $divisionId,
+                'request' => $request->all(),
+            ]);
+
+            return response()->json([
+                'message' => 'Terjadi kesalahan saat menambahkan anggota',
+                'error' => $e->getMessage(),
+            ], 500);
         }
-
-        // Filter by status
-        if ($request->filled('status') && $request->status !== 'all') {
-            $query->where('status', $request->status);
-        }
-
-        // Filter by month
-        if ($request->filled('month') && $request->month !== 'all') {
-            $query->whereMonth('start_time', $request->month);
-        }
-
-        // Filter by year
-        if ($request->filled('year') && $request->year !== 'all') {
-            $query->whereYear('start_time', $request->year);
-        }
-
-        // Search by title, division, pic
-        if ($request->filled('search')) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('title', 'LIKE', "%{$search}%")
-                  ->orWhere('division', 'LIKE', "%{$search}%")
-                  ->orWhere('pic', 'LIKE', "%{$search}%");
-            });
-        }
-
-        $events = $query->orderBy('start_time', 'asc')->get();
-
-        return response()->json($events->map(fn ($e) => $this->formatEvent($e)));
     }
 
     // ─── Check Date Conflict (Public / Admin) ─────────────────────
@@ -69,27 +91,27 @@ class EventController extends Controller
         if ($excludeEventId) {
             $eventQuery->where('id', '!=', $excludeEventId);
         }
-        $conflictingEvents = $eventQuery->get()->map(fn ($e) => [
+        $conflictingEvents = $eventQuery->get()->map(fn($e) => [
             'type'     => 'agenda',
             'id'       => $e->id,
             'title'    => $e->title,
-            'division' => $e->division,
+            'division' => $e->division->division->name,
             'status'   => $e->status,
         ]);
 
         $prokerQuery = \App\Models\DivisionWorkProgram::where('date', 'LIKE', "%{$targetDate}%")
             ->orWhere('date', 'LIKE', '%' . date('Y-m', strtotime($targetDate)) . '%'); // some prokers just have "Maret 2026"
         // To be safe, exact match if it's a full date string, or partial for month-year
-        $prokerQuery = \App\Models\DivisionWorkProgram::where(function($q) use ($targetDate) {
+        $prokerQuery = \App\Models\DivisionWorkProgram::where(function ($q) use ($targetDate) {
             $q->where('date', $targetDate)
-              ->orWhere('date', 'LIKE', "%" . date('Y-m', strtotime($targetDate)) . "%")
-              ->orWhere('date', 'LIKE', "%" . strftime('%B %Y', strtotime($targetDate)) . "%"); // e.g. "Agustus 2026"
+                ->orWhere('date', 'LIKE', "%" . date('Y-m', strtotime($targetDate)) . "%")
+                ->orWhere('date', 'LIKE', "%" . strftime('%B %Y', strtotime($targetDate)) . "%"); // e.g. "Agustus 2026"
         });
-        
+
         if ($excludeProkerId) {
             $prokerQuery->where('id', '!=', $excludeProkerId);
         }
-        $conflictingProkers = $prokerQuery->get()->map(fn ($p) => [
+        $conflictingProkers = $prokerQuery->get()->map(fn($p) => [
             'type'     => 'proker',
             'id'       => $p->id,
             'title'    => $p->name,
@@ -111,76 +133,77 @@ class EventController extends Controller
 
     public function store(Request $request)
     {
-        // Check permission
-        if (!auth()->user()->canCreateEvent()) {
-            return response()->json(['message' => 'Tidak memiliki izin untuk membuat kegiatan'], 403);
-        }
 
-        $validator = Validator::make($request->all(), [
-            'title'              => 'required|string|max:255',
-            'division'           => 'required|string',
-            'pic'                => 'required|string|max:255',
-            'start_time'         => 'required|date',
-            'end_time'           => 'nullable|date',
-            'location'           => 'required|string|max:255',
-            'status'             => 'required|string',
-            'description'        => 'nullable|string',
-            'rundown'            => 'nullable|array',
-            'rundown.*.time'     => 'required|string',
-            'rundown.*.desc'     => 'required|string',
-            'docs'               => 'nullable|array',
-            'docs.*'             => 'string',
-        ]);
+        try {
+            // Check permission
+            // if (!auth()->user()->isAdmin()) {
+            //     return response()->json(['message' => 'Tidak memiliki izin untuk membuat kegiatan'], 403);
+            // }
 
-        if ($validator->fails()) {
-            return response()->json(['message' => 'Validasi gagal', 'errors' => $validator->errors()], 422);
-        }
+            $validator = Validator::make($request->all(), [
+                'title'              => 'required|string|max:255',
+                'division'           => 'required',
+                'pic'                => 'required|string|max:255',
+                'type_event'         => 'required',
+                'status'             => 'required|string',
+                'description'        => 'nullable|string',
+                'allowed'        => 'required|string',
 
-        // Kadiv hanya bisa membuat event untuk divisinya sendiri
-        if (auth()->user()->isKadiv() && $request->division !== auth()->user()->divisi) {
-            return response()->json(['message' => 'Kadiv hanya dapat membuat kegiatan untuk divisinya sendiri'], 403);
-        }
 
-        $event = Event::create([
-            'title'       => $request->title,
-            'division'    => $request->division,
-            'pic'         => $request->pic,
-            'start_time'  => $request->start_time,
-            'end_time'    => $request->end_time ?? $request->start_time,
-            'location'    => $request->location,
-            'status'      => $request->status,
-            'description' => $request->description,
-            'created_by'  => auth()->user()->name,
-        ]);
+            ]);
 
-        // Buat rundown
-        if (!empty($request->rundown)) {
-            foreach ($request->rundown as $index => $item) {
-                EventRundown::create([
-                    'event_id'    => $event->id,
-                    'time'        => $item['time'],
-                    'description' => $item['desc'],
-                    'order'       => $index + 1,
-                ]);
+            if ($validator->fails()) {
+                return response()->json(['message' => 'Validasi gagal', 'errors' => $validator->errors()], 422);
             }
-        }
 
-        // Buat dokumen
-        if (!empty($request->docs)) {
-            foreach ($request->docs as $icon) {
-                EventDocument::create([
-                    'event_id' => $event->id,
-                    'icon'     => $icon,
-                ]);
+            // Kadiv hanya bisa membuat event untuk divisinya sendiri
+            if (auth()->user()->isKadiv() && $request->division !== auth()->user()->divisi) {
+                return response()->json(['message' => 'Kadiv hanya dapat membuat kegiatan untuk divisinya sendiri'], 403);
             }
+
+            $event = Event::create([
+                'title'       => $request->title,
+                'division_id'    => $request->division,
+                'pic'         => $request->pic,
+                "type_event" => $request->type_event,
+                'status'      => $request->status,
+                'description' => $request->description,
+                'allowed' => $request->allowed,
+                'created_by'  => auth()->user()->name,
+            ]);
+
+            // Buat rundown
+            if (!empty($request->rundown)) {
+                foreach ($request->rundown as $index => $item) {
+                    EventRundown::create([
+                        'event_id'    => $event->id,
+                        'time'        => $item['time'],
+                        'description' => $item['desc'],
+                        'order'       => $index + 1,
+                    ]);
+                }
+            }
+
+            // Buat dokumen
+            // if (!empty($request->docs)) {
+            //     foreach ($request->docs as $icon) {
+            //         EventDocument::create([
+            //             'event_id' => $event->id,
+            //             'icon'     => $icon,
+            //         ]);
+            //     }
+            // }
+
+            $event->load(['rundowns', 'documents']);
+
+            return response()->json([
+                'message' => 'Kegiatan berhasil dibuat',
+                'data'    => $this->formatEvent($event),
+            ], 201);
+        } catch (\Throwable $th) {
+            Log::info("Error di insert data event");
+            Log::info($th->getMessage());
         }
-
-        $event->load(['rundowns', 'documents']);
-
-        return response()->json([
-            'message' => 'Kegiatan berhasil dibuat',
-            'data'    => $this->formatEvent($event),
-        ], 201);
     }
 
     // ─── Show ─────────────────────────────────────────────────────
@@ -197,34 +220,39 @@ class EventController extends Controller
     {
         $event = Event::findOrFail($id);
 
-        if (!auth()->user()->canEditEvent()) {
-            return response()->json(['message' => 'Tidak memiliki izin untuk mengubah kegiatan'], 403);
-        }
+        // if (!auth()->user()->canEditEvent()) {
+        //     return response()->json(['message' => 'Tidak memiliki izin untuk mengubah kegiatan'], 403);
+        // }
+
+        Log::info("ini cek request memek");
+        Log::info($request->all());
 
         // Kadiv hanya bisa edit event divisinya sendiri
-        if (auth()->user()->isKadiv() && $event->division !== auth()->user()->divisi) {
+        if (auth()->user()->isKadiv() && $event->division->name !== auth()->user()->divisi) {
             return response()->json(['message' => 'Kadiv hanya dapat mengubah kegiatan divisinya sendiri'], 403);
         }
 
         $validator = Validator::make($request->all(), [
             'title'      => 'sometimes|string|max:255',
-            'division'   => 'sometimes|string|in:KWSB,Internal,Eksternal,Minbak,Sosma,Infokom,KWU',
             'pic'        => 'sometimes|string|max:255',
-            'start_time' => 'sometimes|date',
-            'end_time'   => 'sometimes|date|after_or_equal:start_time',
-            'location'   => 'sometimes|string|max:255',
-            'status'     => 'sometimes|in:Mendatang,Berlangsung,Selesai,Dibatalkan,Persiapan',
-            'description'=> 'nullable|string',
+            'status'     => 'sometimes',
+            'allowed'     => 'sometimes',
+            'description' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
             return response()->json(['message' => 'Validasi gagal', 'errors' => $validator->errors()], 422);
         }
-
-        $event->update($request->only([
-            'title', 'division', 'pic', 'start_time', 'end_time',
-            'location', 'status', 'description',
-        ]));
+        // error update only pasti nya
+        $event->update([
+            'title' => $request->title,
+            'division_id' => $request->division,
+            'pic' => $request->pic,
+            'type_event' => $request->type_event,
+            'status' => $request->status,
+            'description' => $request->description,
+            'allowed' => $request->allowed,
+        ]);
 
         $event->load(['rundowns', 'documents']);
 
@@ -240,9 +268,9 @@ class EventController extends Controller
     {
         $event = Event::findOrFail($id);
 
-        if (!auth()->user()->canDeleteEvent()) {
-            return response()->json(['message' => 'Tidak memiliki izin untuk menghapus kegiatan'], 403);
-        }
+        // if (!auth()->user()->canDeleteEvent()) {
+        //     return response()->json(['message' => 'Tidak memiliki izin untuk menghapus kegiatan'], 403);
+        // }
 
         $event->delete();
 
@@ -255,9 +283,9 @@ class EventController extends Controller
     {
         $event = Event::findOrFail($id);
 
-        if (!auth()->user()->canEditEvent()) {
-            return response()->json(['message' => 'Tidak memiliki izin untuk mengubah status kegiatan'], 403);
-        }
+        // if (!auth()->user()->canEditEvent()) {
+        //     return response()->json(['message' => 'Tidak memiliki izin untuk mengubah status kegiatan'], 403);
+        // }
 
         $validator = Validator::make($request->all(), [
             'status' => 'required|in:Mendatang,Berlangsung,Selesai,Dibatalkan,Persiapan',
@@ -281,27 +309,28 @@ class EventController extends Controller
     {
         $startStr = $event->start_time ? $event->start_time->format('Y-m-d') : null;
         $endStr = $event->end_time ? $event->end_time->format('Y-m-d') : $startStr;
-
+        // data nya aja
         return [
             'id'          => $event->id,
             'event_id'    => $event->event_id,
             'title'       => $event->title,
             'name'        => $event->title,
-            'division'    => $event->division,
+            'division'    => $event->division->name,
             'pic'         => $event->pic,
             'start'       => $event->start_time?->toISOString(),
             'end'         => $event->end_time?->toISOString(),
             'start_time'  => $startStr,
             'end_time'    => $endStr,
             'date'        => $startStr,
-            'location'    => $event->location,
+            'location'    => $event->location ?? null,
             'status'      => $event->status,
             'description' => $event->description,
             'created_by'  => $event->created_by,
-            'rundown'     => $event->rundowns->map(fn ($r) => [
+            'rundown'     => $event->rundowns->map(fn($r) => [
                 'time' => $r->time,
                 'desc' => $r->description,
             ])->values(),
+            "timetables" => $event->timetables,
             'docs' => $event->documents->pluck('icon')->values(),
         ];
     }

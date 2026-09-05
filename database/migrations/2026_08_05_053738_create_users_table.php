@@ -16,9 +16,9 @@ return new class extends Migration {
             $table->string('phone')->nullable();
             $table->string('angkatan')->nullable();
             // kahim, wakahim, sekum1, sekum2, bendum1, bendum2, kadiv, sekdiv, bendiv, anggota
-            $table->string('jabatan')->default('anggota');
+
             // KWSB, Internal, Eksternal, Minbak, Sosma, Infokom, KWU
-            $table->string('divisi')->nullable();
+            $table->foreignId('division')->constrained('divisions')->cascadeOnDelete();
             $table->string('sub_divisi')->nullable();
             $table->enum('status', ['aktif', 'nonaktif'])->default('aktif');
             $table->rememberToken();

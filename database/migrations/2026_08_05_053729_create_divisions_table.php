@@ -16,6 +16,7 @@ return new class extends Migration {
             $table->string('color_soft');
             $table->string('icon');
             $table->text('description');
+            $table->enum('visibility', ['publik', 'only_roles'])->default("publik");
             $table->text('vision');
             $table->text('mission');
             $table->integer('established_year')->nullable();

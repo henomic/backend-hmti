@@ -11,11 +11,13 @@ return new class extends Migration {
             $table->id();
             $table->string('event_id')->unique();
             $table->string('title');
-            $table->string('division'); // nama divisi string: KWSB, Internal, dll
+            $table->foreignId('division_id')->constrained('divisions')->cascadeOnDelete(); // nama divisi string: KWSB, Internal, dll
             $table->string('pic');      // nama PIC (string)
-            $table->datetime('start_time');
-            $table->datetime('end_time');
-            $table->string('location');
+            // $table->datetime('start_time');
+            // $table->datetime('end_time');
+            $table->enum('type_event', ['event', 'meeting']);
+            $table->enum('allowed', ['publik', 'anggota', 'divisi']);
+
             $table->enum('status', ['Mendatang', 'Berlangsung', 'Selesai', 'Dibatalkan', 'Persiapan'])->default('Mendatang');
             $table->text('description')->nullable();
             $table->string('created_by'); // nama user pembuat

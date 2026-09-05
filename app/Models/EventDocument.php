@@ -7,12 +7,14 @@ use Illuminate\Database\Eloquent\Model;
 
 class EventDocument extends Model
 {
+
+    protected $table="documents";
     use HasFactory;
 
-    protected $fillable = ['event_id', 'icon', 'file_path'];
+    protected $guarded = ["event_id"];
 
-    public function event()
+    public function documentable()
     {
-        return $this->belongsTo(Event::class);
+    return $this->morphTo();
     }
 }

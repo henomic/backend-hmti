@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class Division extends Model
 {
@@ -17,6 +18,7 @@ class Division extends Model
         'color_soft',
         'icon',
         'description',
+        'visibility',
         'vision',
         'mission',
         'established_year',
@@ -33,6 +35,10 @@ class Division extends Model
     {
         return $this->hasMany(DivisionWorkProgram::class);
     }
+    public function event()
+    {
+        return $this->hasMany(Event::class);
+    }
 
     public function histories()
     {
@@ -46,6 +52,14 @@ class Division extends Model
 
     // ─── Helper Methods ───────────────────────────────────────────
 
+
+    public function permissions(): MorphMany
+    {
+        return $this->morphMany(
+            roles_permisions::class,
+            'permissionable'
+        );
+    }
     public function getCoordinator()
     {
         return $this->members()->with('user')->where('position', 'Koordinator')->first();
@@ -59,13 +73,14 @@ class Division extends Model
     public function getStats(): array
     {
         $programs = $this->workPrograms;
+
         $total = $programs->count();
 
         return [
-            'members'      => $this->members->count(),
-            'completed'    => $programs->where('status', 'Selesai')->count(),
-            'upcoming'     => $programs->where('status', 'Mendatang')->count(),
-            'successRate'  => $total > 0
+            'members' => $this->members->count(),
+            'completed' => $programs->where('status', 'Selesai')->count(),
+            'upcoming' => $programs->where('status', 'Mendatang')->count(),
+            'successRate' => $total > 0
                 ? round(($programs->where('status', 'Selesai')->count() / $total) * 100)
                 : 0,
         ];

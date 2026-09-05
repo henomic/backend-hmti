@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Division;
 use App\Models\DivisionWorkProgram;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 class WorkProgramController extends Controller
@@ -14,7 +16,17 @@ class WorkProgramController extends Controller
 
     public function index(Request $request)
     {
-        $query = DivisionWorkProgram::with('division');
+        $query = DivisionWorkProgram::with('division', 'timetables');
+        if ($request->id_user) {
+            $user = User::select('id', 'jabatan', 'division')->find($request->id_user);
+            $data = $user->CanManageDivisionsData(['workprogram'], ['R']) ?? [];
+
+            $colectifdivisionId = collect($data)->pluck("permissionable_id")->values()->toArray();
+            $colectifdivisionId[] = $user->division;
+            $colectifdivisionId = array_unique($colectifdivisionId);
+            Log::info("user nya nih");
+            Log::info($colectifdivisionId);
+        }
 
         // Filter by division (ID or Name)
         if ($request->filled('division') && $request->division !== 'all') {
@@ -24,7 +36,7 @@ class WorkProgramController extends Controller
                     $q->where('id', $divisionParam);
                 } else {
                     $q->where('name', $divisionParam)
-                      ->orWhere('full_name', 'LIKE', "%{$divisionParam}%");
+                        ->orWhere('full_name', 'LIKE', "%{$divisionParam}%");
                 }
             });
         }
@@ -39,17 +51,44 @@ class WorkProgramController extends Controller
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'LIKE', "%{$search}%")
-                  ->orWhere('pic', 'LIKE', "%{$search}%")
-                  ->orWhereHas('division', function ($dq) use ($search) {
-                      $dq->where('name', 'LIKE', "%{$search}%")
-                         ->orWhere('full_name', 'LIKE', "%{$search}%");
-                  });
+                    //   ->orWhere('pic', 'LIKE', "%{$search}%")
+                    ->orWhereHas('division', function ($dq) use ($search) {
+                        $dq->where('name', 'LIKE', "%{$search}%")
+                            ->orWhere('full_name', 'LIKE', "%{$search}%");
+                    });
             });
         }
 
-        $programs = $query->orderBy('id', 'asc')->get();
+        if (!isset($request->id_user)) {
 
-        return response()->json($programs->map(fn ($p) => $this->formatWorkProgram($p)));
+            $query->where('allowed', 'publik')->whereHas('division', function ($d) {
+                $d->where("visibility", 'publik');
+            });
+        } else {
+
+            $query->where(function ($q) use ($colectifdivisionId) {
+
+                $q->whereIn('allowed', ['anggota', 'publik'])
+
+                    ->orWhere(function ($q) use ($colectifdivisionId) {
+
+                        $q->where('allowed', 'divisi')
+                            ->whereHas('division', function ($d) use ($colectifdivisionId) {
+                                $d->whereIn('id', $colectifdivisionId);
+                            });
+                    });
+            })->whereHas('division', function ($d) use ($colectifdivisionId) {
+                $d->where("visibility", 'publik')->orWhere(function ($d) use ($colectifdivisionId) {
+                    $d->where("visibility", 'only_roles')->whereIn('id', $colectifdivisionId);
+                });
+            });
+        }
+
+        $programs = $query
+            ->orderBy('id', 'asc')
+            ->get();
+
+        return response()->json($programs->map(fn($p) => $this->formatWorkProgram($p)));
     }
 
     // ─── Show (Public) ────────────────────────────────────────────
@@ -83,14 +122,14 @@ class WorkProgramController extends Controller
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('name', 'LIKE', "%{$search}%")
-                  ->orWhere('pic', 'LIKE', "%{$search}%");
+                $q->where('name', 'LIKE', "%{$search}%");
+                //   ->orWhere('pic', 'LIKE', "%{$search}%")
             });
         }
 
         $programs = $query->orderBy('id', 'asc')->get();
 
-        return response()->json($programs->map(fn ($p) => $this->formatWorkProgram($p)));
+        return response()->json($programs->map(fn($p) => $this->formatWorkProgram($p)));
     }
 
     // ─── Update (Protected) ───────────────────────────────────────
@@ -100,18 +139,18 @@ class WorkProgramController extends Controller
         $program = DivisionWorkProgram::with('division')->findOrFail($id);
         $user = auth()->user();
 
-        if ($user->isKadiv() && $program->division?->name !== $user->divisi) {
-            return response()->json(['message' => 'Kadiv hanya dapat mengoperasikan proker divisinya sendiri'], 403);
-        }
+        // if ($user->isKadiv() && $program->division?->name !== $user->divisi) {
+        //     return response()->json(['message' => 'Kadiv hanya dapat mengoperasikan proker divisinya sendiri'], 403);
+        // }
 
-        if (!$user->canManageEvent()) {
-            return response()->json(['message' => 'Tidak memiliki izin untuk mengedit proker'], 403);
-        }
+        // if (!$user->canManageEvent()) {
+        //     return response()->json(['message' => 'Tidak memiliki izin untuk mengedit proker'], 403);
+        // }
 
         $validator = Validator::make($request->all(), [
             'name'     => 'sometimes|string|max:255',
-            'date'     => 'sometimes|string|max:50',
-            'pic'      => 'sometimes|string|max:100',
+            // 'date'     => 'sometimes|string|max:50',
+            'allowed'      => 'sometimes|string|max:100',
             'status'   => 'sometimes|string|max:50',
             'progress' => 'sometimes|integer|min:0|max:100',
         ]);
@@ -120,8 +159,8 @@ class WorkProgramController extends Controller
             return response()->json(['message' => 'Validasi gagal', 'errors' => $validator->errors()], 422);
         }
 
-        $program->update($request->only(['name', 'date', 'pic', 'status', 'progress']));
-
+        $program->update($request->only(['name', 'allowed',   'status', 'progress']));
+        // 'pic'
         return response()->json([
             'message' => 'Program kerja berhasil diperbarui',
             'data'    => $this->formatWorkProgram($program->fresh('division')),
@@ -160,11 +199,12 @@ class WorkProgramController extends Controller
             'division_color'     => $program->division?->color,
             'division_icon'      => $program->division?->icon,
             'name'               => $program->name,
-            'date'               => $program->date,
-            'pic'                => $program->pic,
+            // 'date'               => $program->date,
+            // 'pic'                => $program->pic,
             'status'             => $program->status,
             'progress'           => (int) $program->progress,
             'created_at'         => $program->created_at?->toISOString(),
+            "timetables"         => $program->timetables,
             'updated_at'         => $program->updated_at?->toISOString(),
         ];
     }

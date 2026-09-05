@@ -7,17 +7,19 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void
     {
-        Schema::create('event_documents', function (Blueprint $table) {
+        Schema::create('documents', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('event_id')->constrained('events')->cascadeOnDelete();
-            $table->string('icon');
-            $table->string('file_path')->nullable();
+            $table->morphs("documentable");
+            $table->string("name")->nullable();
+            $table->text("note")->nullable();
+            $table->enum('type_documents', ['pict', 'note', 'file']);
+            $table->text('file_path')->nullable();
             $table->timestamps();
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('event_documents');
+        Schema::dropIfExists('documents');
     }
 };

@@ -83,17 +83,31 @@ class SipmaDataSeeder extends Seeder
             'division_id' => $divMap['Internal']->id,
             'pic_id' => $kadivInternal->id,
             'title' => 'Rapat Pleno Evaluasi Semester Genap',
-            'start_datetime' => '2026-07-12 14:00:00',
-            'end_datetime' => '2026-07-12 16:00:00',
+            'type_event' => "meeting",
             'location' => 'Ruang Rapat Utama, Gedung A',
             'description' => 'Evaluasi menyeluruh terhadap pelaksanaan program kerja.',
             'status' => 'Berlangsung',
         ]);
 
-        $event->rundowns()->createMany([
-            ['time' => '14:00', 'description' => 'Pembukaan & Doa'],
-            ['time' => '14:15', 'description' => 'Laporan Divisi Internal'],
-            ['time' => '15:50', 'description' => 'Kesimpulan & Penutup'],
+        $event->timetables()->createMany([
+            [
+                'type' => 'pembukaan',
+                'location' => 'Ruang Rapat Utama, Gedung A',
+                'start_time' => '2026-08-22 14:00:00',
+                'end_time' => '2026-08-22 14:15:00',
+            ],
+            [
+                'type' => 'laporan',
+                'location' => 'Ruang Rapat Utama, Gedung A',
+                'start_time' => '2026-08-22 14:15:00',
+                'end_time' => '2026-08-22 15:50:00',
+            ],
+            [
+                'type' => 'penutup',
+                'location' => 'Ruang Rapat Utama, Gedung A',
+                'start_time' => '2026-08-22 15:50:00',
+                'end_time' => '2026-08-22 17:00:00',
+            ],
         ]);
     }
 }

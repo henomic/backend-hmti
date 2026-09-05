@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 class DivisionMember extends Model
 {
     use HasFactory;
+    protected $table = "division_members";
 
     protected $fillable = [
         'division_id',

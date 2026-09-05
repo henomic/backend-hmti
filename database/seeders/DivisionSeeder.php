@@ -11,6 +11,19 @@ class DivisionSeeder extends Seeder
     {
         $divisions = [
             [
+                'name'             => 'KWSBK',
+                'full_name'        => 'Khusus ketua,wakil ketua,sekertaris umum,bendahara umum, ketua divisi',
+                'color'            => '#01091a',
+                'color_light'      => '#DBEAFE',
+                'color_soft'       => '#EFF6FF',
+                'icon'             => 'bi-shield-check',
+                'visibility'             => 'only_roles',
+                'description'      => 'Pengawasan kepatuhan terhadap AD/ART dan evaluasi kinerja pengurus organisasi.',
+                'vision'           => 'Menjadi badan pengawas yang independen, adil, dan transparan dalam menjaga kepatuhan organisasi terhadap AD/ART.',
+                'mission'          => 'Melakukan evaluasi berkala, menegakkan disiplin, dan memediasi konflik internal secara profesional.',
+                'established_year' => 2018,
+            ],
+            [
                 'name'             => 'KWSB',
                 'full_name'        => 'Ketertiban, Wewenang & Badan Pengawas',
                 'color'            => '#2563EB',

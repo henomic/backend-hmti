@@ -7,6 +7,7 @@ use App\Models\Event;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 class UserController extends Controller
@@ -15,9 +16,9 @@ class UserController extends Controller
 
     public function index(Request $request)
     {
-        if (!auth()->user()->canManageUsers()) {
-            return response()->json(['message' => 'Tidak memiliki izin untuk melihat daftar pengguna'], 403);
-        }
+        // if (!auth()->user()->canManageUsers()) {
+        //     return response()->json(['message' => 'Tidak memiliki izin untuk melihat daftar pengguna'], 403);
+        // }
 
         $query = User::query();
 
@@ -34,8 +35,8 @@ class UserController extends Controller
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'LIKE', "%{$search}%")
-                  ->orWhere('nim', 'LIKE', "%{$search}%")
-                  ->orWhere('email', 'LIKE', "%{$search}%");
+                    ->orWhere('nim', 'LIKE', "%{$search}%")
+                    ->orWhere('email', 'LIKE', "%{$search}%");
             });
         }
 
@@ -62,28 +63,33 @@ class UserController extends Controller
         $user = User::findOrFail($id);
         $authUser = auth()->user();
 
+
         // Hanya pimpinan yang bisa update user lain
-        if ($authUser->id != $id && !$authUser->canManageUsers()) {
+        if (!$authUser->isAdmin()) {
             return response()->json(['message' => 'Tidak memiliki izin untuk mengubah data pengguna lain'], 403);
         }
 
         $validator = Validator::make($request->all(), [
-            'name'       => 'sometimes|string|max:255',
-            'email'      => 'sometimes|string|email|unique:users,email,' . $id,
-            'phone'      => 'nullable|string|max:20',
-            'angkatan'   => 'nullable|string|max:10',
-            'jabatan'    => 'sometimes|in:kahim,wakahim,sekum1,sekum2,bendum1,bendum2,kadiv,sekdiv,bendiv,anggota',
-            'divisi'     => 'nullable|string|in:KWSB,Internal,Eksternal,Minbak,Sosma,Infokom,KWU',
+            'name'       => 'required|string|max:255',
+            'nim'       => 'required|string|max:255',
+            'email'      => 'required|string|email|unique:users,email,' . $id,
+            'phone'      => 'nullable|max:20',
+            'angkatan'   => 'nullable|max:10',
+            'jabatan'    => 'required',
+            'division'     => 'required',
             'sub_divisi' => 'nullable|string|max:100',
-            'status'     => 'sometimes|in:aktif,nonaktif',
-            'password'   => 'sometimes|string|min:6|confirmed',
+            'status'     => 'required',
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['message' => 'Validasi gagal', 'errors' => $validator->errors()], 422);
+            return response()->json([
+                'message' => 'Validasi gagal',
+                'errors'  => $validator->errors()
+            ], 422);
         }
 
-        $data = $request->only(['name', 'email', 'phone', 'angkatan', 'jabatan', 'divisi', 'sub_divisi', 'status']);
+
+        $data = $request->only(['name', 'nim', 'email', 'phone', 'angkatan', 'jabatan', 'division', 'sub_divisi', 'status']);
 
         if ($request->filled('password')) {
             $data['password'] = Hash::make($request->password);
@@ -99,22 +105,83 @@ class UserController extends Controller
 
     // ─── Destroy (Pimpinan only) ──────────────────────────────────
 
-    public function destroy($id)
+    public function destroy(int $id)
     {
-        if (!auth()->user()->canManageUsers()) {
-            return response()->json(['message' => 'Tidak memiliki izin untuk menghapus pengguna'], 403);
+
+        Log::info("id nya ni");
+        Log::info($id);
+
+
+        try {
+            if (!auth()->user()->isAdmin()) {
+                return response()->json(['message' => 'Tidak memiliki izin untuk menghapus pengguna'], 403);
+            }
+
+
+            $user = User::findOrFail($id);
+            $user->delete();
+
+            return response()->json(['message' => 'Pengguna berhasil dihapus']);
+        } catch (\Throwable $th) {
+            Log::info("error nya di delete user");
+            Log::info($th->getMessage());
         }
-
-        // Tidak boleh hapus diri sendiri
-        if (auth()->id() == $id) {
-            return response()->json(['message' => 'Tidak dapat menghapus akun sendiri'], 400);
-        }
-
-        $user = User::findOrFail($id);
-        $user->delete();
-
-        return response()->json(['message' => 'Pengguna berhasil dihapus']);
     }
+
+
+    public function store(Request $request)
+    {
+        $authUser = auth()->user();
+
+        // Hanya pimpinan yang bisa membuat user baru
+        if (!$authUser->isAdmin()) {
+            return response()->json([
+                'message' => 'Tidak memiliki izin untuk membuat pengguna baru'
+            ], 403);
+        }
+
+        Log::info("request smua nya");
+        Log::info($request->all());
+
+        $validator = Validator::make($request->all(), [
+            'name'       => 'required|string|max:255',
+            'nim'       => 'required|string|max:255',
+            'email'      => 'required|string|email|unique:users,email',
+            'phone'      => 'nullable|max:20',
+            'angkatan'   => 'nullable|max:10',
+            'jabatan'    => 'required',
+            'division'     => 'required',
+            'sub_divisi' => 'nullable|string|max:100',
+            'status'     => 'required',
+            'password'   => 'required|string|min:6',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validasi gagal',
+                'errors'  => $validator->errors()
+            ], 422);
+        }
+
+        $user = User::create([
+            'name'       => $request->name,
+            'nim'       => $request->nim,
+            'email'      => $request->email,
+            'phone'      => $request->phone,
+            'angkatan'   => $request->angkatan,
+            'jabatan'    => $request->jabatan,
+            'division'     => $request->division,
+            'sub_divisi' => $request->sub_divisi,
+            'status'     => $request->status,
+            'password'   => Hash::make($request->password),
+        ]);
+
+        return response()->json([
+            'message' => 'Pengguna berhasil dibuat',
+            'data'    => $user,
+        ], 201);
+    }
+
 
     // ─── Dashboard Stats ──────────────────────────────────────────
 
@@ -131,7 +198,7 @@ class UserController extends Controller
             ->orderBy('created_at', 'desc')
             ->limit(5)
             ->get()
-            ->map(fn ($e) => [
+            ->map(fn($e) => [
                 'id'       => $e->id,
                 'event_id' => $e->event_id,
                 'title'    => $e->title,

@@ -4,6 +4,9 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Override;
 
 class Event extends Model
 {
@@ -12,20 +15,22 @@ class Event extends Model
     protected $fillable = [
         'event_id',
         'title',
-        'division',
+        'division_id',
         'pic',
-        'start_time',
-        'end_time',
-        'location',
+        // 'start_time',
+        // 'end_time',
+        // 'location',
+        'type_event',
+        'allowed',
         'status',
         'description',
         'created_by',
     ];
 
-    protected $casts = [
-        'start_time' => 'datetime',
-        'end_time'   => 'datetime',
-    ];
+    // protected $casts = [
+    //     'start_time' => 'datetime',
+    //     'end_time'   => 'datetime',
+    // ];
 
     // ─── Boot: Auto-generate event_id ─────────────────────────────
 
@@ -51,6 +56,23 @@ class Event extends Model
 
     public function documents()
     {
-        return $this->hasMany(EventDocument::class);
+        return $this->morphMany(EventDocument::class, 'documentable');
+    }
+    public function timetables()
+    {
+        return $this->morphMany(timetable::class, 'timetables');
+    }
+
+    public function permissions(): MorphMany
+    {
+        return $this->morphMany(
+            roles_permisions::class,
+            'permissionable'
+        );
+    }
+
+    public function division(): BelongsTo
+    {
+        return $this->belongsTo(Division::class, 'division_id', 'id');
     }
 }

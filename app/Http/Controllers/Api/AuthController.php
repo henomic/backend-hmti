@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 class AuthController extends Controller
@@ -75,6 +76,7 @@ class AuthController extends Controller
             ->orWhere('email', $loginInput)
             ->first();
 
+        Log::info($request->all());
         if (!$user || !Hash::check($request->password, $user->password)) {
             return response()->json([
                 'message' => 'NIM/Email atau password salah',
@@ -91,6 +93,7 @@ class AuthController extends Controller
         $user->tokens()->delete();
         $token = $user->createToken('auth_token')->plainTextToken;
 
+
         return response()->json([
             'message'      => 'Login berhasil',
             'token'        => $token,
@@ -98,7 +101,8 @@ class AuthController extends Controller
             'token_type'   => 'Bearer',
             'user'         => $user,
             'role'         => $user->jabatan,
-            'permissions'  => $this->getUserPermissions($user),
+            'permissions'         => $user->permissions(),
+            'is_admin' => $user->isAdmin()
         ]);
     }
 
@@ -116,9 +120,10 @@ class AuthController extends Controller
     {
         $user = $request->user();
         return response()->json([
-            'user'        => $user,
-            'role'        => $user->jabatan,
-            'permissions' => $this->getUserPermissions($user),
+            'user'         => $user,
+            'role'         => $user->jabatan,
+            'permissions'         => $user->permissions(),
+            'is_admin' => $user->isAdmin()
         ]);
     }
 
@@ -147,7 +152,7 @@ class AuthController extends Controller
             'can_edit_event'      => $user->canEditEvent(),
             'can_delete_event'    => $user->canDeleteEvent(),
             'can_manage_users'    => $user->canManageUsers(),
-            'can_manage_divisions'=> $user->canManageDivisions(),
+            'can_manage_divisions' => $user->canManageDivisions(),
         ];
     }
 }
